@@ -4,7 +4,9 @@ import (
 	"context"
     "log/slog"
     "net"
+	"sync"
 	"sync/atomic"
+	"time"
 )
 
 type Server struct{
@@ -12,13 +14,16 @@ type Server struct{
 	handler Handler
 	logger  *slog.Logger
 	nextConnID atomic.Uint64
+	wg sync.WaitGroup
+	shutdownTimeout time.Duration
 }
 
-func NewServer(address string, handler Handler,logger *slog.Logger,) *Server{
+func NewServer(address string, handler Handler,logger *slog.Logger,shutdownTimeout time.Duration,) *Server{
 	return &Server{
 		address: address,
 		handler: handler,
 		logger: logger,
+		shutdownTimeout: shutdownTimeout,
 	}
 }
 
@@ -42,9 +47,28 @@ func (s *Server) Run(ctx context.Context) error{
 	)
 	for{
 		conn,err:=listener.Accept()
-		if err!=nil{
+		if err != nil {
 			if ctx.Err() != nil {
-				s.logger.Info("TCP server stopped gracefully")
+				s.logger.Info("waiting for active connections to finish")
+				done := make(chan struct{})
+				go func() {
+					s.wg.Wait()
+					close(done)
+				}()
+				select {
+
+					case <-done:
+
+						s.logger.Info("all active connections finished")
+
+					case <-time.After(s.shutdownTimeout):
+
+						s.logger.Warn(
+							"shutdown timeout exceeded; forcing server shutdown",
+							slog.Duration("timeout", s.shutdownTimeout),
+						)
+				}
+
 				return nil
 			}
 
@@ -52,9 +76,9 @@ func (s *Server) Run(ctx context.Context) error{
 				"failed to accept connection",
 				slog.Any("error", err),
 			)
-			
-		}
 
+			continue
+		}
 		s.logger.Info(
 			"connection accepted",
 			slog.String("remote_addr", conn.RemoteAddr().String()),
@@ -64,6 +88,10 @@ func (s *Server) Run(ctx context.Context) error{
 			slog.Uint64("conn_id", connID),
 			slog.String("remote_addr", conn.RemoteAddr().String()),
 		)
-		go s.handler.Handle(conn, connLogger)
+		s.wg.Add(1)
+		go func(){
+			defer s.wg.Done()
+			s.handler.Handle(conn, connLogger)
+		}()
 	}
 }

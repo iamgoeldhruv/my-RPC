@@ -18,6 +18,9 @@ The project currently provides a reusable TCP transport layer with the following
 - Per-connection logging with unique connection IDs
 - Graceful server shutdown using `context.Context`
 - Signal-based shutdown (`SIGINT`/`SIGTERM`)
+- Active connection tracking using `sync.WaitGroup`
+- Graceful draining of in-flight connections during shutdown
+- Configurable shutdown timeout to prevent indefinite blocking
 
 At this stage, the project focuses solely on the networking infrastructure. No RPC protocol has been implemented yet.
 
@@ -57,6 +60,7 @@ Responsible for:
 - Creating the root application context
 - Handling operating system shutdown signals (`SIGINT`/`SIGTERM`)
 - Starting the server
+- Configuring the server shutdown timeout
 
 ### `internal/logger`
 
@@ -83,7 +87,11 @@ Responsibilities include:
 - Creating connection-scoped loggers
 - Spawning a goroutine for every client
 - Delegating connection processing to a handler
-- Reacting to context cancellation for graceful shutdown
+- Tracking active client connections
+- Reacting to context cancellation
+- Stopping acceptance of new connections during shutdown
+- Waiting for active connections to complete
+- Forcing shutdown after a configurable timeout
 
 ---
 
@@ -103,24 +111,31 @@ Responsibilities include:
                      |   TCP Server   |
                      +----------------+
                               │
-               ┌──────────────┴──────────────┐
-               │                             │
-               ▼                             ▼
-      Accept TCP Connections        Wait for Context
-               │                             │
-               │                             ▼
-               │                     listener.Close()
-               │
-               ▼
-      Generate Connection ID
-               │
-      Create Child Logger
-               │
-               ▼
-        Handler Interface
-               │
-               ▼
-          EchoHandler
+               ┌──────────────┴───────────────────────────────┐
+               │                                              │
+               ▼                                              ▼
+      Accept TCP Connections                         Wait for Context
+               │                                              │
+               │                                              ▼
+               │                                      Shutdown Signal
+               │                                              │
+               ▼                                              ▼
+      Generate Connection ID                         listener.Close()
+               │                                              │
+               ▼                                              ▼
+      Create Child Logger                    Stop Accepting New Clients
+               │                                              │
+               ▼                                              ▼
+      WaitGroup.Add(1)                          Wait for Active Connections
+               │                                              │
+               ▼                                  ┌───────────┴───────────┐
+        Handler Interface                         │                       │
+               │                                  ▼                       ▼
+               ▼                        All Connections Done      Shutdown Timeout
+          EchoHandler                             │                       │
+               │                                  └───────────┬───────────┘
+               ▼                                              ▼
+      WaitGroup.Done()                                 Server Exit
 ```
 
 The transport layer manages networking concerns only.
@@ -217,5 +232,6 @@ This project follows a few guiding principles:
 - Prefer dependency injection over global state.
 - Build reusable components with clear responsibilities.
 - Use structured logging from the beginning.
-- Design components around `context.Context` for cancellation and future request propagation.
+- Design components around `context.Context` for cancellation and graceful lifecycle management.
+- Gracefully drain in-flight work before process termination.
 - Evolve the framework incrementally while maintaining a clean architecture.
