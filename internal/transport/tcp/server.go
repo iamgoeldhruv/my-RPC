@@ -1,6 +1,7 @@
 package tcp
 
 import (
+	"context"
     "log/slog"
     "net"
 	"sync/atomic"
@@ -21,8 +22,17 @@ func NewServer(address string, handler Handler,logger *slog.Logger,) *Server{
 	}
 }
 
-func (s *Server) Start() error{
+func (s *Server) Run(ctx context.Context) error{
 	listener,err:=net.Listen("tcp",s.address)
+		go func() {
+
+		<-ctx.Done()
+
+		s.logger.Info("shutdown signal received")
+
+		listener.Close()
+
+	}()
 	if err!=nil{
 		return err
 	}
@@ -33,11 +43,16 @@ func (s *Server) Start() error{
 	for{
 		conn,err:=listener.Accept()
 		if err!=nil{
+			if ctx.Err() != nil {
+				s.logger.Info("TCP server stopped gracefully")
+				return nil
+			}
+
 			s.logger.Error(
 				"failed to accept connection",
 				slog.Any("error", err),
 			)
-			continue
+			
 		}
 
 		s.logger.Info(

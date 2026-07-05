@@ -16,6 +16,8 @@ The project currently provides a reusable TCP transport layer with the following
 - Echo handler for transport validation
 - Structured logging using Go's `log/slog`
 - Per-connection logging with unique connection IDs
+- Graceful server shutdown using `context.Context`
+- Signal-based shutdown (`SIGINT`/`SIGTERM`)
 
 At this stage, the project focuses solely on the networking infrastructure. No RPC protocol has been implemented yet.
 
@@ -52,6 +54,8 @@ Responsible for:
 - Creating the application logger
 - Initializing the TCP server
 - Wiring dependencies
+- Creating the root application context
+- Handling operating system shutdown signals (`SIGINT`/`SIGTERM`)
 - Starting the server
 
 ### `internal/logger`
@@ -79,31 +83,44 @@ Responsibilities include:
 - Creating connection-scoped loggers
 - Spawning a goroutine for every client
 - Delegating connection processing to a handler
+- Reacting to context cancellation for graceful shutdown
 
 ---
 
 ## Architecture
 
 ```text
-                Client
-                   │
-                   │ TCP
-                   ▼
-          +----------------+
-          |   TCP Server   |
-          +----------------+
-                   │
-      Accept Connection
-                   │
-        Generate Connection ID
-                   │
-       Create Child Logger
-                   │
-                   ▼
-             Handler Interface
-                   │
-                   ▼
-             EchoHandler
+                         Application
+                              │
+                              │
+                   signal.NotifyContext()
+                              │
+                              ▼
+                     context.Context
+                              │
+                              ▼
+                     +----------------+
+                     |   TCP Server   |
+                     +----------------+
+                              │
+               ┌──────────────┴──────────────┐
+               │                             │
+               ▼                             ▼
+      Accept TCP Connections        Wait for Context
+               │                             │
+               │                             ▼
+               │                     listener.Close()
+               │
+               ▼
+      Generate Connection ID
+               │
+      Create Child Logger
+               │
+               ▼
+        Handler Interface
+               │
+               ▼
+          EchoHandler
 ```
 
 The transport layer manages networking concerns only.
@@ -196,7 +213,9 @@ The current implementation simply echoes every received message back to the clie
 This project follows a few guiding principles:
 
 - Keep networking independent of protocol implementation.
+- Separate application lifecycle management from transport responsibilities.
 - Prefer dependency injection over global state.
 - Build reusable components with clear responsibilities.
 - Use structured logging from the beginning.
+- Design components around `context.Context` for cancellation and future request propagation.
 - Evolve the framework incrementally while maintaining a clean architecture.
