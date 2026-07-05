@@ -1,24 +1,23 @@
 # My-RPC
 
-A from-scratch RPC framework implementation in Go.
+A from-scratch Remote Procedure Call (RPC) framework implemented in Go.
 
-The project is built incrementally, starting from the transport layer and progressing toward a fully functional RPC system with request framing, serialization, method registration, dispatching, and client/server abstractions.
+The goal of this project is to build an RPC framework layer by layer, starting with the transport layer and gradually adding message framing, serialization, service registration, request dispatching, and client/server abstractions. Each component is implemented from first principles to understand how production RPC systems are designed.
 
 ---
 
-## Current Status
+## Current Features
 
-### Day 1: TCP Echo Server
+The project currently provides a reusable TCP transport layer with the following capabilities:
 
-Implemented a modular TCP server capable of:
+- TCP server implementation
+- Concurrent connection handling (goroutine per connection)
+- Pluggable connection handlers
+- Echo handler for transport validation
+- Structured logging using Go's `log/slog`
+- Per-connection logging with unique connection IDs
 
-- Listening for incoming TCP connections
-- Handling multiple concurrent clients
-- Reading raw bytes from connections
-- Echoing received data back to clients
-- Decoupling transport and application logic through a handler abstraction
-
-This serves as the networking foundation for future RPC functionality.
+At this stage, the project focuses solely on the networking infrastructure. No RPC protocol has been implemented yet.
 
 ---
 
@@ -31,79 +30,126 @@ This serves as the networking foundation for future RPC functionality.
 │       └── main.go
 │
 ├── internal
+│   ├── logger
+│   │   └── logger.go
+│   │
 │   └── transport
 │       └── tcp
 │           ├── handler.go
 │           ├── echo_handler.go
 │           └── server.go
 │
+├── go.mod
 └── README.md
 ```
+
+### `cmd/server`
+
+Application entry point.
+
+Responsible for:
+
+- Creating the application logger
+- Initializing the TCP server
+- Wiring dependencies
+- Starting the server
+
+### `internal/logger`
+
+Provides the application's structured logging configuration.
+
+Uses Go's standard `log/slog` package and exposes a single logger that is injected into the server. The server creates child loggers for each accepted connection, automatically attaching contextual information such as:
+
+- Connection ID
+- Remote client address
+
+This keeps logging consistent while avoiding repeated log fields throughout the codebase.
+
+### `internal/transport/tcp`
+
+Implements the networking layer.
+
+The transport layer is intentionally independent of any RPC-specific logic.
+
+Responsibilities include:
+
+- Listening on a TCP address
+- Accepting incoming connections
+- Assigning unique connection IDs
+- Creating connection-scoped loggers
+- Spawning a goroutine for every client
+- Delegating connection processing to a handler
 
 ---
 
 ## Architecture
 
 ```text
-┌─────────┐
-│ Client  │
-└────┬────┘
-     │ TCP
-     ▼
-┌─────────┐
-│ Server  │
-└────┬────┘
-     │
-     ▼
-┌─────────┐
-│ Handler │
-└────┬────┘
-     │
-     ▼
-┌─────────────┐
-│ EchoHandler │
-└─────────────┘
+                Client
+                   │
+                   │ TCP
+                   ▼
+          +----------------+
+          |   TCP Server   |
+          +----------------+
+                   │
+      Accept Connection
+                   │
+        Generate Connection ID
+                   │
+       Create Child Logger
+                   │
+                   ▼
+             Handler Interface
+                   │
+                   ▼
+             EchoHandler
 ```
 
-The transport layer is responsible only for connection management.
+The transport layer manages networking concerns only.
 
-Application behavior is delegated to a handler implementation.
-
-This separation ensures the networking layer remains unchanged as the project evolves from a simple echo server into a complete RPC framework.
+Application behavior is delegated through the `Handler` interface, allowing different protocols to be implemented without modifying the transport layer.
 
 ---
 
-## Components
+## Handler Abstraction
 
-### TCP Server
-
-Responsible for:
-
-- Binding to a TCP address
-- Accepting incoming connections
-- Spawning a goroutine per connection
-- Delegating connection processing to a handler
-
-### Handler Interface
-
-Defines the contract for processing a connection.
+The transport layer communicates only through the following interface:
 
 ```go
 type Handler interface {
-    Handle(net.Conn)
+    Handle(net.Conn, *slog.Logger)
 }
 ```
 
-Any component implementing this interface can be attached to the TCP server.
+Every accepted connection receives:
 
-### Echo Handler
+- The network connection
+- A connection-scoped logger
 
-Current handler implementation.
+This keeps the transport layer reusable while enabling handlers to produce structured logs without knowing how logging is configured.
 
-For each connection:
+---
 
-1. Read bytes from the socket
-2. Write the same bytes back to the client
+## Structured Logging
+
+Logging is implemented using Go's standard `log/slog` package.
+
+A single application logger is created during startup and injected into the TCP server.
+
+For every accepted connection, the server creates a child logger containing connection-specific context.
+
+Example log output:
+
+```text
+time=2026-07-06T12:30:11Z
+level=INFO
+msg="connection accepted"
+conn_id=3
+remote_addr=127.0.0.1:51243
+```
+
+This design allows future RPC request logs to automatically include additional context such as request IDs, service names, and method names.
 
 ---
 
@@ -115,17 +161,17 @@ Start the server:
 go run ./cmd/server
 ```
 
-Expected output:
+The server listens on:
 
 ```text
-TCP server listening on :8080
+:8080
 ```
 
 ---
 
 ## Testing
 
-Using netcat:
+Using `netcat`:
 
 ```bash
 nc localhost 8080
@@ -141,45 +187,16 @@ rpc
 rpc
 ```
 
-The server echoes every received message back to the client.
+The current implementation simply echoes every received message back to the client.
 
 ---
 
-## Concurrency Model
+## Design Principles
 
-Each accepted connection is handled in an independent goroutine.
+This project follows a few guiding principles:
 
-```go
-for {
-    conn, err := listener.Accept()
-    if err != nil {
-        continue
-    }
-
-    go handler.Handle(conn)
-}
-```
-
-This enables multiple clients to communicate with the server concurrently without blocking each other.
-
----
-
-## Design Goals
-
-- Keep transport concerns isolated from business logic
-- Avoid coupling networking code to protocol implementation
-- Build reusable primitives for future RPC features
-- Maintain a clean architecture that can evolve incrementally
-
----
-
-## Roadmap
-
-### Day 1
-
-- [x] TCP listener
-- [x] Connection accept loop
-- [x] Goroutine-per-connection model
-- [x] Echo handler
-- [x] Transport abstraction
-
+- Keep networking independent of protocol implementation.
+- Prefer dependency injection over global state.
+- Build reusable components with clear responsibilities.
+- Use structured logging from the beginning.
+- Evolve the framework incrementally while maintaining a clean architecture.
