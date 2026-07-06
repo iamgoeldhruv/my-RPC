@@ -16,14 +16,19 @@ type Server struct{
 	nextConnID atomic.Uint64
 	wg sync.WaitGroup
 	shutdownTimeout time.Duration
+	readTimeout  time.Duration
+    writeTimeout time.Duration
 }
 
-func NewServer(address string, handler Handler,logger *slog.Logger,shutdownTimeout time.Duration,) *Server{
+func NewServer(address string, handler Handler,logger *slog.Logger,shutdownTimeout time.Duration,readTimeout time.Duration,
+    writeTimeout time.Duration,) *Server{
 	return &Server{
 		address: address,
 		handler: handler,
 		logger: logger,
 		shutdownTimeout: shutdownTimeout,
+		readTimeout:       readTimeout,
+    	writeTimeout:      writeTimeout,
 	}
 }
 
@@ -91,7 +96,8 @@ func (s *Server) Run(ctx context.Context) error{
 		s.wg.Add(1)
 		go func(){
 			defer s.wg.Done()
-			s.handler.Handle(conn, connLogger)
+			timeoutConn:=NewTimeoutConn(conn,s.readTimeout,s.writeTimeout)
+			s.handler.Handle(timeoutConn, connLogger)
 		}()
 	}
 }

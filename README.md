@@ -21,6 +21,10 @@ The project currently provides a reusable TCP transport layer with the following
 - Active connection tracking using `sync.WaitGroup`
 - Graceful draining of in-flight connections during shutdown
 - Configurable shutdown timeout to prevent indefinite blocking
+- Configurable per-connection read timeouts
+- Configurable per-connection write timeouts
+- Automatic deadline refresh before every read/write operation
+- Graceful handling of idle and stalled client connections
 
 At this stage, the project focuses solely on the networking infrastructure. No RPC protocol has been implemented yet.
 
@@ -42,6 +46,7 @@ At this stage, the project focuses solely on the networking infrastructure. No R
 │       └── tcp
 │           ├── handler.go
 │           ├── echo_handler.go
+|           └── timeout_conn.go
 │           └── server.go
 │
 ├── go.mod
@@ -92,6 +97,9 @@ Responsibilities include:
 - Stopping acceptance of new connections during shutdown
 - Waiting for active connections to complete
 - Forcing shutdown after a configurable timeout
+- Applying configurable read/write deadlines to every connection
+- Detecting idle or stalled clients through connection deadlines
+- Enforcing connection-level timeout policies independently of protocol logic
 
 ---
 
@@ -111,31 +119,48 @@ Responsibilities include:
                      |   TCP Server   |
                      +----------------+
                               │
-               ┌──────────────┴───────────────────────────────┐
-               │                                              │
-               ▼                                              ▼
-      Accept TCP Connections                         Wait for Context
-               │                                              │
-               │                                              ▼
-               │                                      Shutdown Signal
-               │                                              │
-               ▼                                              ▼
-      Generate Connection ID                         listener.Close()
-               │                                              │
-               ▼                                              ▼
-      Create Child Logger                    Stop Accepting New Clients
-               │                                              │
-               ▼                                              ▼
-      WaitGroup.Add(1)                          Wait for Active Connections
-               │                                              │
-               ▼                                  ┌───────────┴───────────┐
-        Handler Interface                         │                       │
-               │                                  ▼                       ▼
-               ▼                        All Connections Done      Shutdown Timeout
-          EchoHandler                             │                       │
-               │                                  └───────────┬───────────┘
-               ▼                                              ▼
-      WaitGroup.Done()                                 Server Exit
+               ┌──────────────┴────────────────────────────────────┐
+               │                                                   │
+               ▼                                                   ▼
+      Accept TCP Connections                              Wait for Context
+               │                                                   │
+               ▼                                                   ▼
+      Generate Connection ID                            Shutdown Signal
+               │                                                   │
+               ▼                                                   ▼
+      Create Child Logger                               listener.Close()
+               │                                                   │
+               ▼                                                   ▼
+      Wrap Connection with                           Stop Accepting New Clients
+          TimeoutConn                                           │
+               │                                                ▼
+               ▼                                   Wait for Active Connections
+      WaitGroup.Add(1)                                         │
+               │                                   ┌────────────┴────────────┐
+               ▼                                   ▼                         ▼
+        Handler Interface                All Connections Done      Shutdown Timeout
+               │                                   │                         │
+               ▼                                   └────────────┬────────────┘
+          EchoHandler                                         ▼
+               │                                         Server Exit
+               │
+        ┌──────┴──────┐
+        ▼             ▼
+   Read()         Write()
+        │             │
+        ▼             ▼
+SetReadDeadline  SetWriteDeadline
+        │             │
+        └──────┬──────┘
+               ▼
+      Underlying net.Conn
+               │
+               ▼
+     Timeout/Error Returned
+               │
+               ▼
+    Close Connection Gracefully
+                       
 ```
 
 The transport layer manages networking concerns only.
@@ -235,3 +260,4 @@ This project follows a few guiding principles:
 - Design components around `context.Context` for cancellation and graceful lifecycle management.
 - Gracefully drain in-flight work before process termination.
 - Evolve the framework incrementally while maintaining a clean architecture.
+- Keep connection-level policies (timeouts, lifecycle management) inside the transport layer.

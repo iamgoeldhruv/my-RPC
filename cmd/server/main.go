@@ -15,12 +15,16 @@ func main() {
     logger := logger.New()
     handler := tcp.NewEchoHandler()
     shutdownTimeout := 10 * time.Second
+    readTimeout := 30 * time.Second
+    writeTimeout := 30 * time.Second
 
     server := tcp.NewServer(
         ":8080",
         handler,
         logger,
         shutdownTimeout,
+        readTimeout,
+        writeTimeout,
     )
     ctx, stop := signal.NotifyContext(
         context.Background(),
