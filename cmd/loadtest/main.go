@@ -10,14 +10,15 @@ const(
 	messageCount  = 100
 )
 
-func runClient(address string) error{
+func runClient(address string, clientID int) error{
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
 	}
 	defer conn.Close()
 	for i:=1;i<=messageCount;i++{
-		message := []byte(fmt.Sprintf("message-%d", i))
+		expected := fmt.Sprintf("client-%d-message-%d", clientID, i)
+		message := []byte(expected)
 
 		if _, err := conn.Write(message); err != nil {
 			return fmt.Errorf("write message %d: %w", i, err)
@@ -26,7 +27,7 @@ func runClient(address string) error{
 		if _, err := io.ReadFull(conn, response); err != nil {
 			return fmt.Errorf("read response %d: %w", i, err)
 		}
-		if string(response)!=string(message){
+		if string(response)!=expected{
 			return fmt.Errorf(
 				"invalid response for message %d: got %q, expected %q",
 				i,
@@ -41,7 +42,7 @@ func runClient(address string) error{
 }
 
 func main(){
-	if err := runClient(serverAddress); err != nil {
+	if err := runClient(serverAddress,1); err != nil {
 		panic(err)
 	}
 	fmt.Println("client completed successfully")

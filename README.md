@@ -263,15 +263,30 @@ hello
 rpc
 rpc
 ```
+
+
+The current implementation simply echoes every received message back to the client.
 ### Single-Client Load Test
 
 The load-test client establishes a single persistent TCP connection and performs 100 sequential request/response cycles.
+
+Each message contains a unique client and message identifier:
+
+`client-1-message-1`
+
+`client-1-message-2`
+
+...
+
+`client-1-message-100`
+
+The client validates that every response exactly matches the message that was sent. This makes message corruption and ordering issues easier to detect.
 
 Each cycle:
 
 Connect
    ↓
-Send message
+Send uniquely identified message
    ↓
 Read response
    ↓
@@ -284,18 +299,6 @@ The client performs:
 100 writes
 100 reads
 100 response validations
-
-Run the load-test client with:
-
-`go run ./cmd/loadtest`
-
-A successful run prints:
-
-`client completed successfully`
-
-The load-test client currently validates a single persistent connection. The next stage will extend this to multiple concurrent connections.
-
-The current implementation simply echoes every received message back to the client.
 
 ---
 
