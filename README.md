@@ -11,6 +11,7 @@ The goal of this project is to build an RPC framework layer by layer, starting w
 The project currently provides a reusable TCP transport layer with the following capabilities:
 
 - TCP server implementation
+- Centralized TCP server configuration through a Config structure
 - Concurrent connection handling (goroutine per connection)
 - Pluggable connection handlers
 - Echo handler for transport validation
@@ -60,12 +61,24 @@ Application entry point.
 Responsible for:
 
 - Creating the application logger
+- Creating the TCP server configuration
 - Initializing the TCP server
 - Wiring dependencies
 - Creating the root application context
 - Handling operating system shutdown signals (`SIGINT`/`SIGTERM`)
 - Starting the server
-- Configuring the server shutdown timeout
+
+## Server Configuration
+
+TCP server configuration is encapsulated in a `Config` structure.
+
+```go
+type Config struct {
+    Address         string
+    ReadTimeout     time.Duration
+    WriteTimeout    time.Duration
+    ShutdownTimeout time.Duration
+}
 
 ### `internal/logger`
 

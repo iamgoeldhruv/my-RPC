@@ -11,20 +11,24 @@ import (
     "time"
 )
 
+
+
 func main() {
     logger := logger.New()
     handler := tcp.NewEchoHandler()
-    shutdownTimeout := 10 * time.Second
-    readTimeout := 30 * time.Second
-    writeTimeout := 30 * time.Second
 
     server := tcp.NewServer(
-        ":8080",
+        tcp.Config{
+            Address:":8080",
+            ReadTimeout:30 * time.Second,
+            WriteTimeout:30 * time.Second,
+            ShutdownTimeout:30 * time.Second,
+
+        },
+       
         handler,
         logger,
-        shutdownTimeout,
-        readTimeout,
-        writeTimeout,
+        
     )
     ctx, stop := signal.NotifyContext(
         context.Background(),

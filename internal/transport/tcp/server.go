@@ -20,15 +20,21 @@ type Server struct{
     writeTimeout time.Duration
 }
 
-func NewServer(address string, handler Handler,logger *slog.Logger,shutdownTimeout time.Duration,readTimeout time.Duration,
-    writeTimeout time.Duration,) *Server{
+type Config struct{
+    Address string 
+    ReadTimeout time.Duration
+    WriteTimeout time.Duration
+    ShutdownTimeout time.Duration
+}
+
+func NewServer(config Config,handler Handler,logger *slog.Logger,) *Server{
 	return &Server{
-		address: address,
+		address: config.Address,
 		handler: handler,
 		logger: logger,
-		shutdownTimeout: shutdownTimeout,
-		readTimeout:       readTimeout,
-    	writeTimeout:      writeTimeout,
+		shutdownTimeout: config.ShutdownTimeout,
+		readTimeout: config.ReadTimeout,
+    	writeTimeout:config.WriteTimeout,
 	}
 }
 
