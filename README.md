@@ -26,8 +26,12 @@ The project currently provides a reusable TCP transport layer with the following
 - Configurable per-connection write timeouts
 - Automatic deadline refresh before every read/write operation
 - Graceful handling of idle and stalled client connections
+- Single-client TCP load-test client
+- Persistent TCP connection testing
+- 100 sequential request/response cycles with response validation
 
-At this stage, the project focuses solely on the networking infrastructure. No RPC protocol has been implemented yet.
+At this stage, the project focuses on the networking infrastructure and transport validation. No RPC protocol has been implemented yet.
+
 
 ---
 
@@ -36,7 +40,10 @@ At this stage, the project focuses solely on the networking infrastructure. No R
 ```text
 .
 ├── cmd
-│   └── server
+│   ├── server
+│   │   └── main.go
+│   │
+│   └── loadtest
 │       └── main.go
 │
 ├── internal
@@ -256,6 +263,37 @@ hello
 rpc
 rpc
 ```
+### Single-Client Load Test
+
+The load-test client establishes a single persistent TCP connection and performs 100 sequential request/response cycles.
+
+Each cycle:
+
+Connect
+   ↓
+Send message
+   ↓
+Read response
+   ↓
+Validate response
+   ↓
+Repeat
+
+The client performs:
+
+100 writes
+100 reads
+100 response validations
+
+Run the load-test client with:
+
+`go run ./cmd/loadtest`
+
+A successful run prints:
+
+`client completed successfully`
+
+The load-test client currently validates a single persistent connection. The next stage will extend this to multiple concurrent connections.
 
 The current implementation simply echoes every received message back to the client.
 
