@@ -29,6 +29,8 @@ The project currently provides a reusable TCP transport layer with the following
 - Single-client TCP load-test client
 - Persistent TCP connection testing
 - 100 sequential request/response cycles with response validation
+- Client-side connection timeout using `net.DialTimeout`
+- Client-side I/O deadlines to prevent load tests from hanging indefinitely
 
 At this stage, the project focuses on the networking infrastructure and transport validation. No RPC protocol has been implemented yet.
 
@@ -299,6 +301,17 @@ The client performs:
 100 writes
 100 reads
 100 response validations
+The load-test client uses a 5-second timeout for connection establishment and
+refreshes the connection deadline before each request/response cycle.
+
+This ensures that a stalled server or connection causes the test to fail
+instead of hanging indefinitely.
+Each request/response cycle also refreshes the connection deadline using
+`conn.SetDeadline`, ensuring that individual network operations cannot block
+indefinitely.
+
+The deadline is refreshed before every message, so the 5-second timeout
+applies independently to each request/response cycle.
 
 ---
 

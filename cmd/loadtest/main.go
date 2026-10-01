@@ -3,20 +3,25 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 )
 
 const(
 	serverAddress = "localhost:8080"
 	messageCount  = 100
+	clientTimeout = 5 * time.Second
 )
 
 func runClient(address string, clientID int) error{
-	conn, err := net.Dial("tcp", address)
+	conn, err := net.DialTimeout("tcp", address,clientTimeout)
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
 	}
 	defer conn.Close()
 	for i:=1;i<=messageCount;i++{
+		if err := conn.SetDeadline(time.Now().Add(clientTimeout)); err != nil {
+        return fmt.Errorf("set deadline: %w", err)
+    }
 		expected := fmt.Sprintf("client-%d-message-%d", clientID, i)
 		message := []byte(expected)
 
