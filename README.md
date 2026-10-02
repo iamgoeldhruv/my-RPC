@@ -31,7 +31,13 @@ The project currently provides a reusable TCP transport layer with the following
 - Persistent TCP connection testing
 - 100 sequential request/response cycles per client
 - Response validation for every request
-- Synchronization of concurrent clients using sync.WaitGroup
+- Synchronization of concurrent clients using `sync.WaitGroup`
+- Structured per-message test results
+- Per-message latency measurement
+- Total test duration measurement
+- Throughput measurement in messages per second
+- Average latency calculation
+- P50, P95, P99, and maximum latency calculation
 - Client-side connection timeout using `net.DialTimeout`
 - Client-side I/O deadlines to prevent load tests from hanging indefinitely
 
@@ -49,7 +55,10 @@ At this stage, the project focuses on the networking infrastructure and transpor
 │   │   └── main.go
 │   │
 │   └── loadtest
-│       └── main.go
+│       ├── main.go
+│       ├── client.go
+│       ├── metrics.go
+│       └── report.go
 │
 ├── internal
 │   ├── logger
@@ -83,6 +92,14 @@ Responsible for:
 ## Server Configuration
 
 TCP server configuration is encapsulated in a `Config` structure.
+### `cmd/loadtest`
+
+The load-test client is split into focused components:
+
+- `main.go` — orchestrates concurrent clients and result collection
+- `client.go` — manages TCP connections, request/response validation, and per-message results
+- `metrics.go` — calculates throughput and latency statistics
+- `report.go` — formats and prints load-test results
 
 ```go
 type Config struct {
@@ -306,6 +323,38 @@ Across 1000 concurrent clients, the load test performs:
 100,000 reads
 
 100,000 response validations
+Each request/response cycle records its latency in a structured test result.
+
+After all clients complete, the load test aggregates the results and reports:
+
+- Total messages
+- Successful messages
+- Failed messages
+- Total test duration
+- Message throughput
+- Average latency
+- P50 latency
+- P95 latency
+- P99 latency
+- Maximum latency
+Example output:
+
+Load Test Results
+=================
+
+Connections:       1000
+Messages:          100000
+Successful:        100000
+Failed:            0
+
+Duration:          2.41s
+Throughput:        41493.78 msg/s
+
+Average latency:   1.82ms
+P50:               1.51ms
+P95:               3.20ms
+P99:               7.42ms
+Max:               15.31ms
 The load-test client uses a 5-second timeout for connection establishment and
 refreshes the connection deadline before each request/response cycle.
 
@@ -317,6 +366,16 @@ indefinitely.
 
 The deadline is refreshed before every message, so the 5-second timeout
 applies independently to each request/response cycle.
+
+Run the load test with:
+
+```bash
+go run ./cmd/loadtest
+
+The command prints total messages, successes, failures, duration, throughput,
+average latency, and P50/P95/P99/max latency. It exits with a non-zero status
+when any message fails, which makes it suitable for CI or a repeatable local
+performance check.
 
 ---
 

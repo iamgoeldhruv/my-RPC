@@ -1,69 +1,46 @@
 package main
+
 import (
-	"fmt"
-	"io"
-	"net"
-	"time"
 	"sync"
+	"time"
 )
 
-const(
+const (
 	serverAddress = "localhost:8080"
 	messageCount  = 100
 	clientTimeout = 5 * time.Second
-	clientCount=1000
+	clientCount   = 1000
 )
 
-func runClient(address string, clientID int) error{
-	conn, err := net.DialTimeout("tcp", address,clientTimeout)
-	if err != nil {
-		return fmt.Errorf("connect: %w", err)
-	}
-	defer conn.Close()
-	for i:=1;i<=messageCount;i++{
-		if err := conn.SetDeadline(time.Now().Add(clientTimeout)); err != nil {
-        return fmt.Errorf("set deadline: %w", err)
-    }
-		expected := fmt.Sprintf("client-%d-message-%d", clientID, i)
-		message := []byte(expected)
-
-		if _, err := conn.Write(message); err != nil {
-			return fmt.Errorf("write message %d: %w", i, err)
-		}
-		response := make([]byte, len(message))
-		if _, err := io.ReadFull(conn, response); err != nil {
-			return fmt.Errorf("read response %d: %w", i, err)
-		}
-		if string(response)!=expected{
-			return fmt.Errorf(
-				"invalid response for message %d: got %q, expected %q",
-				i,
-				string(response),
-				string(message),
-			)
-		}
-
-	}
-	return nil
-
-}
-
 func main() {
-    var wg sync.WaitGroup
+	startTime := time.Now()
 
-    for clientID := 1; clientID <= clientCount; clientID++ {
-        wg.Add(1)
+	var wg sync.WaitGroup
 
-        go func(id int) {
-            defer wg.Done()
+	results := make(chan []Result, clientCount)
 
-            if err := runClient(serverAddress, id); err != nil {
-                fmt.Printf("client %d failed: %v\n", id, err)
-            }
-        }(clientID)
-    }
+	for clientID := 1; clientID <= clientCount; clientID++ {
+		wg.Add(1)
 
-    wg.Wait()
+		go func(id int) {
+			defer wg.Done()
 
-    fmt.Println("load test completed")
+			results <- runClient(serverAddress, id)
+		}(clientID)
+	}
+
+	wg.Wait()
+	close(results)
+
+	var allResults []Result
+
+	for clientResults := range results {
+		allResults = append(allResults, clientResults...)
+	}
+
+	duration := time.Since(startTime)
+
+	metrics := calculateMetrics(allResults, duration)
+
+	printMetrics(metrics)
 }
