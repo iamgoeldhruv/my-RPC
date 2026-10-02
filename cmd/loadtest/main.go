@@ -1,10 +1,10 @@
 package main
 
 import (
-	"sync"
+	"flag"
+	"fmt"
 	"time"
 )
-
 const (
 	serverAddress = "localhost:8080"
 	messageCount  = 100
@@ -13,34 +13,48 @@ const (
 )
 
 func main() {
+
+	scenarioFlag := flag.String(
+		"scenario",
+		"normal",
+		"test scenario",
+	)
+
+	flag.Parse()
+
+	scenario := Scenario(*scenarioFlag)
+
+	fmt.Printf("Running scenario: %s\n", scenario)
+
 	startTime := time.Now()
 
-	var wg sync.WaitGroup
+	result, err := runScenario(scenario)
 
-	results := make(chan []Result, clientCount)
-
-	for clientID := 1; clientID <= clientCount; clientID++ {
-		wg.Add(1)
-
-		go func(id int) {
-			defer wg.Done()
-
-			results <- runClient(serverAddress, id)
-		}(clientID)
+	if err != nil {
+		fmt.Printf("Scenario failed: %v\n", err)
+		return
 	}
 
-	wg.Wait()
-	close(results)
+	fmt.Println()
+	fmt.Println("Scenario completed")
+	fmt.Printf("Scenario: %s\n", result.Scenario)
+	fmt.Printf("Duration: %s\n", result.Duration)
 
-	var allResults []Result
-
-	for clientResults := range results {
-		allResults = append(allResults, clientResults...)
+	if result.ServerShutdown != nil {
+		fmt.Printf(
+			"Server shutdown error: %v\n",
+			result.ServerShutdown,
+		)
 	}
 
-	duration := time.Since(startTime)
+	if result.ClientResults != nil {
+		metrics := calculateMetrics(
+			result.ClientResults,
+			result.Duration,
+		)
 
-	metrics := calculateMetrics(allResults, duration)
+		printMetrics(metrics)
+	}
 
-	printMetrics(metrics)
+	_ = startTime
 }

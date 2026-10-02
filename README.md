@@ -288,60 +288,61 @@ rpc
 
 
 The current implementation simply echoes every received message back to the client.
-### Concurrent TCP Load Test
+### Scenario-Based TCP Load Test
 
-The load-test client establishes 1000 concurrent persistent TCP connections.
+The load-test command runs an end-to-end scenario against a server process that
+it starts automatically. Each scenario opens up to 1000 concurrent persistent
+TCP connections, validates echo responses, records per-message latency, and
+prints aggregate metrics.
 
-Each client runs independently in its own goroutine and performs 100 sequential request/response cycles.
+Run the default scenario:
 
-The load test uses sync.WaitGroup to wait for all client goroutines to complete.
+```bash
+go run ./cmd/loadtest
+```
 
-Each client follows:
+Select a scenario with the `--scenario` flag:
 
-Connect
-   ↓
-Send 100 uniquely identified messages
-   ↓
-Validate every response
-   ↓
-Close connection
-   ↓
-Wait for all clients
+```bash
+go run ./cmd/loadtest --scenario=normal
+go run ./cmd/loadtest --scenario=before-start
+go run ./cmd/loadtest --scenario=halfway
+go run ./cmd/loadtest --scenario=mostly-done
+go run ./cmd/loadtest --scenario=idle
+```
 
-Each client performs:
+Available scenarios:
 
-100 writes
+| Scenario | Behavior |
+| --- | --- |
+| `normal` | Every client sends and validates all 100 messages, then the test completes normally. |
+| `before-start` | All clients connect first; the server is shut down before message processing begins. |
+| `halfway` | The server is shut down after every client reaches message 50. |
+| `mostly-done` | The server is shut down after every client reaches message 90. |
+| `idle` | 1000 idle connections are opened, held briefly, and then the server is shut down. |
 
-100 reads
+The normal, halfway, and mostly-done scenarios perform 100 sequential
+request/response cycles per client. With the default 1000 clients, that is up
+to 100,000 writes, reads, and response validations. The client uses a 5-second
+connection and per-request I/O timeout.
 
-100 response validations
+Each completed run reports:
 
-Across 1000 concurrent clients, the load test performs:
-
-100,000 writes
-
-100,000 reads
-
-100,000 response validations
-Each request/response cycle records its latency in a structured test result.
-
-After all clients complete, the load test aggregates the results and reports:
-
+- Connections
 - Total messages
-- Successful messages
-- Failed messages
-- Total test duration
+- Successful and failed messages
+- Duration
 - Message throughput
 - Average latency
-- P50 latency
-- P95 latency
-- P99 latency
+- P50, P95, and P99 latency
 - Maximum latency
-Example output:
+- Server shutdown errors, when applicable
 
+Example report:
+
+```text
 Load Test Results
 =================
-
 Connections:       1000
 Messages:          100000
 Successful:        100000
@@ -355,8 +356,11 @@ P50:               1.51ms
 P95:               3.20ms
 P99:               7.42ms
 Max:               15.31ms
-The load-test client uses a 5-second timeout for connection establishment and
-refreshes the connection deadline before each request/response cycle.
+```
+
+The scenario runner is intended for local transport and graceful-shutdown
+validation. Run one scenario at a time because each run starts a server on
+`localhost:8080` and manages its shutdown lifecycle.
 
 This ensures that a stalled server or connection causes the test to fail
 instead of hanging indefinitely.

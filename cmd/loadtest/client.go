@@ -14,7 +14,28 @@ type Result struct {
 	Error     error
 }
 
-func runClient(address string, clientID int) []Result {
+type ClientEventType int
+
+const (
+	ClientConnected ClientEventType = iota
+	MessageCompleted
+	ClientFinished
+)
+
+type ClientEvent struct {
+	ClientID  int
+	MessageID int
+	Type      ClientEventType
+}
+
+func runClient(
+	address string,
+	clientID int,
+	eventCh chan<- ClientEvent,
+	startMessages <-chan struct{},
+	stopAfter int,
+) []Result {
+
 	results := make([]Result, 0, messageCount)
 
 	conn, err := net.DialTimeout("tcp", address, clientTimeout)
@@ -23,13 +44,29 @@ func runClient(address string, clientID int) []Result {
 			ClientID: clientID,
 			Error:    fmt.Errorf("connect: %w", err),
 		})
-
 		return results
 	}
 
 	defer conn.Close()
 
+	eventCh <- ClientEvent{
+		ClientID: clientID,
+		Type:     ClientConnected,
+	}
+
+	// Used by shutdown scenarios.
+	// For the normal load test this channel is nil.
+	if startMessages != nil {
+		<-startMessages
+	}
+
 	for messageID := 1; messageID <= messageCount; messageID++ {
+
+		// Used to deliberately stop clients after N messages.
+		if stopAfter > 0 && messageID > stopAfter {
+			return results
+		}
+
 		startTime := time.Now()
 
 		if err := conn.SetDeadline(time.Now().Add(clientTimeout)); err != nil {
@@ -39,7 +76,6 @@ func runClient(address string, clientID int) []Result {
 				Latency:   time.Since(startTime),
 				Error:     fmt.Errorf("set deadline: %w", err),
 			})
-
 			return results
 		}
 
@@ -58,7 +94,6 @@ func runClient(address string, clientID int) []Result {
 				Latency:   time.Since(startTime),
 				Error:     fmt.Errorf("write: %w", err),
 			})
-
 			return results
 		}
 
@@ -71,7 +106,6 @@ func runClient(address string, clientID int) []Result {
 				Latency:   time.Since(startTime),
 				Error:     fmt.Errorf("read: %w", err),
 			})
-
 			return results
 		}
 
@@ -90,7 +124,6 @@ func runClient(address string, clientID int) []Result {
 					string(response),
 				),
 			})
-
 			return results
 		}
 
@@ -99,6 +132,17 @@ func runClient(address string, clientID int) []Result {
 			MessageID: messageID,
 			Latency:   latency,
 		})
+
+		eventCh <- ClientEvent{
+			ClientID:  clientID,
+			MessageID: messageID,
+			Type:      MessageCompleted,
+		}
+	}
+
+	eventCh <- ClientEvent{
+		ClientID: clientID,
+		Type:     ClientFinished,
 	}
 
 	return results
