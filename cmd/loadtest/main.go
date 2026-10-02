@@ -4,12 +4,14 @@ import (
 	"io"
 	"net"
 	"time"
+	"sync"
 )
 
 const(
 	serverAddress = "localhost:8080"
 	messageCount  = 100
 	clientTimeout = 5 * time.Second
+	clientCount=1000
 )
 
 func runClient(address string, clientID int) error{
@@ -46,10 +48,22 @@ func runClient(address string, clientID int) error{
 
 }
 
-func main(){
-	if err := runClient(serverAddress,1); err != nil {
-		panic(err)
-	}
-	fmt.Println("client completed successfully")
+func main() {
+    var wg sync.WaitGroup
 
+    for clientID := 1; clientID <= clientCount; clientID++ {
+        wg.Add(1)
+
+        go func(id int) {
+            defer wg.Done()
+
+            if err := runClient(serverAddress, id); err != nil {
+                fmt.Printf("client %d failed: %v\n", id, err)
+            }
+        }(clientID)
+    }
+
+    wg.Wait()
+
+    fmt.Println("load test completed")
 }

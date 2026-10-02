@@ -26,9 +26,12 @@ The project currently provides a reusable TCP transport layer with the following
 - Configurable per-connection write timeouts
 - Automatic deadline refresh before every read/write operation
 - Graceful handling of idle and stalled client connections
-- Single-client TCP load-test client
+- Concurrent TCP load-test client
+- 1000 concurrent client connections
 - Persistent TCP connection testing
-- 100 sequential request/response cycles with response validation
+- 100 sequential request/response cycles per client
+- Response validation for every request
+- Synchronization of concurrent clients using sync.WaitGroup
 - Client-side connection timeout using `net.DialTimeout`
 - Client-side I/O deadlines to prevent load tests from hanging indefinitely
 
@@ -268,39 +271,41 @@ rpc
 
 
 The current implementation simply echoes every received message back to the client.
-### Single-Client Load Test
+### Concurrent TCP Load Test
 
-The load-test client establishes a single persistent TCP connection and performs 100 sequential request/response cycles.
+The load-test client establishes 1000 concurrent persistent TCP connections.
 
-Each message contains a unique client and message identifier:
+Each client runs independently in its own goroutine and performs 100 sequential request/response cycles.
 
-`client-1-message-1`
+The load test uses sync.WaitGroup to wait for all client goroutines to complete.
 
-`client-1-message-2`
-
-...
-
-`client-1-message-100`
-
-The client validates that every response exactly matches the message that was sent. This makes message corruption and ordering issues easier to detect.
-
-Each cycle:
+Each client follows:
 
 Connect
    ↓
-Send uniquely identified message
+Send 100 uniquely identified messages
    ↓
-Read response
+Validate every response
    ↓
-Validate response
+Close connection
    ↓
-Repeat
+Wait for all clients
 
-The client performs:
+Each client performs:
 
 100 writes
+
 100 reads
+
 100 response validations
+
+Across 1000 concurrent clients, the load test performs:
+
+100,000 writes
+
+100,000 reads
+
+100,000 response validations
 The load-test client uses a 5-second timeout for connection establishment and
 refreshes the connection deadline before each request/response cycle.
 
