@@ -40,6 +40,12 @@ The project currently provides a reusable TCP transport layer with the following
 - P50, P95, P99, and maximum latency calculation
 - Client-side connection timeout using `net.DialTimeout`
 - Client-side I/O deadlines to prevent load tests from hanging indefinitely
+- Length-prefix frame encoder using a 4-byte big-endian payload length
+- Configurable protocol constant for the 16 MiB maximum payload size
+- Payload size validation before writing
+- Complete frame writes with partial-write handling
+- Propagation of writer errors during frame encoding
+- Unit tests for normal, empty, binary,oversized payloads, partial writes, and writer failures and maximum-size payloads
 
 At this stage, the project focuses on networking infrastructure and transport validation. The framing protocol is designed in documentation but has not yet been implemented.
 
@@ -63,16 +69,17 @@ At this stage, the project focuses on networking infrastructure and transport va
 │   └── framing
 │       └── README.md
 ├── internal
+│   ├── framing
+│   │   ├── frame.go
+│   │   └── frame_test.go
 │   ├── logger
 │   │   └── logger.go
-│   │
 │   └── transport
 │       └── tcp
 │           ├── handler.go
 │           ├── echo_handler.go
-|           └── timeout_conn.go
+│           ├── timeout_conn.go
 │           └── server.go
-│
 ├── go.mod
 └── README.md
 ```
@@ -110,7 +117,20 @@ type Config struct {
     WriteTimeout    time.Duration
     ShutdownTimeout time.Duration
 }
+### `internal/framing`
 
+Implements the message framing layer independently of the TCP transport.
+
+Current responsibilities:
+
+- Encoding payload lengths as unsigned 32-bit big-endian integers
+- Writing length-prefixed frames using `WriteFrame(io.Writer, []byte) error`
+- Enforcing the maximum payload size of 16 MiB
+- Handling partial writes and propagating writer errors
+- Validating frame encoding through unit tests
+
+The frame decoder has not yet been implemented. The framing package does not
+manage connections, deadlines, or connection lifecycle.
 ### `internal/logger`
 
 Provides the application's structured logging configuration.
@@ -290,6 +310,14 @@ rpc
 
 
 The current implementation simply echoes received data back to the client. The echo handler is for transport validation; it does not yet parse length-prefixed frames.
+
+### Framing Unit Tests
+
+Run the framing package tests:
+
+```bash
+go test ./internal/framing
+---
 ### Scenario-Based TCP Load Test
 
 The load-test command runs an end-to-end scenario against a server process that
@@ -388,9 +416,14 @@ performance check.
 
 ## Documentation
 
-- [Length-Prefix Framing Protocol — Day 1 Design](docs/framing/README.md)
+- [Length-Prefix Framing Protocol — Design](docs/framing/README.md)
 
-The framing document defines the planned four-byte big-endian length prefix, the 16 MiB maximum payload, zero-length payload behavior, oversized-frame rejection, and handling of partial TCP reads. It describes the intended design; it does not mean the framing implementation is complete.
+The framing documentation defines the four-byte big-endian length prefix,
+the 16 MiB maximum payload, zero-length payload behavior, oversized-frame
+rejection, and partial-read handling.
+
+The `WriteFrame` encoder has been implemented. Frame decoding and
+end-to-end integration with the TCP transport remain future work.
 ---
 ## Design Principles
 
