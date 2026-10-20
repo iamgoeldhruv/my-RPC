@@ -41,7 +41,7 @@ The project currently provides a reusable TCP transport layer with the following
 - Client-side connection timeout using `net.DialTimeout`
 - Client-side I/O deadlines to prevent load tests from hanging indefinitely
 
-At this stage, the project focuses on the networking infrastructure and transport validation. No RPC protocol has been implemented yet.
+At this stage, the project focuses on networking infrastructure and transport validation. The framing protocol is designed in documentation but has not yet been implemented.
 
 
 ---
@@ -59,7 +59,9 @@ At this stage, the project focuses on the networking infrastructure and transpor
 │       ├── client.go
 │       ├── metrics.go
 │       └── report.go
-│
+├── docs
+│   └── framing
+│       └── README.md
 ├── internal
 │   ├── logger
 │   │   └── logger.go
@@ -287,7 +289,7 @@ rpc
 ```
 
 
-The current implementation simply echoes every received message back to the client.
+The current implementation simply echoes received data back to the client. The echo handler is for transport validation; it does not yet parse length-prefixed frames.
 ### Scenario-Based TCP Load Test
 
 The load-test command runs an end-to-end scenario against a server process that
@@ -381,8 +383,15 @@ average latency, and P50/P95/P99/max latency. It exits with a non-zero status
 when any message fails, which makes it suitable for CI or a repeatable local
 performance check.
 
+
 ---
 
+## Documentation
+
+- [Length-Prefix Framing Protocol — Day 1 Design](docs/framing/README.md)
+
+The framing document defines the planned four-byte big-endian length prefix, the 16 MiB maximum payload, zero-length payload behavior, oversized-frame rejection, and handling of partial TCP reads. It describes the intended design; it does not mean the framing implementation is complete.
+---
 ## Design Principles
 
 This project follows a few guiding principles:

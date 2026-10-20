@@ -94,7 +94,7 @@ func (s *Server) Run(ctx context.Context) error{
 			"connection accepted",
 			slog.String("remote_addr", conn.RemoteAddr().String()),
 		)
-		connID := s.nextConnID.Add(1)
+		connID := s.nextConnID.Add(1)   
 		connLogger := s.logger.With(
 			slog.Uint64("conn_id", connID),
 			slog.String("remote_addr", conn.RemoteAddr().String()),
