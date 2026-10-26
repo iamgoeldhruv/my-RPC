@@ -57,3 +57,33 @@ func writeFull(w io.Writer, p []byte) error {
 
 	return nil
 }
+
+
+func ReadFrame(r io.Reader) ([]byte, error) {
+    var header [4]byte
+
+    _, err := io.ReadFull(r, header[:])
+    if err != nil {
+        return nil, fmt.Errorf("read frame length prefix: %w", err)
+    }
+
+    payloadLength := binary.BigEndian.Uint32(header[:])
+
+    if payloadLength > MaxPayloadSize {
+        return nil, fmt.Errorf(
+            "frame payload too large: %d bytes exceeds maximum of %d bytes",
+            payloadLength,
+            MaxPayloadSize,
+        )
+    }
+
+    payload := make([]byte, int(payloadLength))
+
+    _, err = io.ReadFull(r, payload)
+    if err != nil {
+        return nil, fmt.Errorf("read frame payload: %w", err)
+    }
+
+    return payload, nil
+}
+
