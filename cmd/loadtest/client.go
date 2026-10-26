@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
-	"io"
 	"net"
 	"time"
+
+	"my-rpc/internal/framing"
 )
 
 type Result struct {
@@ -35,7 +37,6 @@ func runClient(
 	startMessages <-chan struct{},
 	stopAfter int,
 ) []Result {
-
 	results := make([]Result, 0, messageCount)
 
 	conn, err := net.DialTimeout("tcp", address, clientTimeout)
@@ -55,13 +56,12 @@ func runClient(
 	}
 
 	// Used by shutdown scenarios.
-	// For the normal load test this channel is nil.
+	// For the normal load test, this channel is nil.
 	if startMessages != nil {
 		<-startMessages
 	}
 
 	for messageID := 1; messageID <= messageCount; messageID++ {
-
 		// Used to deliberately stop clients after N messages.
 		if stopAfter > 0 && messageID > stopAfter {
 			return results
@@ -85,33 +85,35 @@ func runClient(
 			messageID,
 		)
 
-		message := []byte(expected)
+		request := []byte(expected)
 
-		if _, err := conn.Write(message); err != nil {
+		// Encode and write the complete request frame.
+		if err := framing.WriteFrame(conn, request); err != nil {
 			results = append(results, Result{
 				ClientID:  clientID,
 				MessageID: messageID,
 				Latency:   time.Since(startTime),
-				Error:     fmt.Errorf("write: %w", err),
+				Error:     fmt.Errorf("write request frame: %w", err),
 			})
 			return results
 		}
 
-		response := make([]byte, len(message))
-
-		if _, err := io.ReadFull(conn, response); err != nil {
+		// Read exactly one complete response frame.
+		response, err := framing.ReadFrame(conn)
+		if err != nil {
 			results = append(results, Result{
 				ClientID:  clientID,
 				MessageID: messageID,
 				Latency:   time.Since(startTime),
-				Error:     fmt.Errorf("read: %w", err),
+				Error:     fmt.Errorf("read response frame: %w", err),
 			})
 			return results
 		}
 
 		latency := time.Since(startTime)
 
-		if string(response) != expected {
+		// Compare bytes rather than strings so binary payloads are supported.
+		if !bytes.Equal(response, request) {
 			results = append(results, Result{
 				ClientID:  clientID,
 				MessageID: messageID,
@@ -120,8 +122,8 @@ func runClient(
 					"client=%d message=%d expected=%q received=%q",
 					clientID,
 					messageID,
-					expected,
-					string(response),
+					request,
+					response,
 				),
 			})
 			return results

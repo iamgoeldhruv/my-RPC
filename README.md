@@ -52,8 +52,13 @@ The project currently provides a reusable TCP transport layer with the following
 - Handling of truncated headers and payloads
 - Support for empty and binary payloads during frame decoding
 - Unit tests for valid frames, partial reads, truncated input, and oversized frames
+- Framed echo handler using `ReadFrame` and `WriteFrame`
+- Length-prefixed request and response messages over persistent TCP connections
+- Support for arbitrary binary payloads in the echo handler
+- Load-test client using framed requests and responses
+- Integration tests for binary payloads and multiple frames per connection
 
-At this stage, the project focuses on networking infrastructure and framing protocol implementation. Frame encoding and decoding are implemented, while integration with the TCP transport remains future work.
+At this stage, the project includes a reusable TCP transport layer and a length-prefixed framing protocol integrated with the echo handler. The server supports multiple framed messages over persistent connections, including arbitrary binary payloads. RPC serialization, service registration, and request dispatching remain future work.
 
 
 ---
@@ -138,6 +143,8 @@ Current responsibilities:
 - Validating payload lengths before memory allocation
 - Propagating contextual errors for header and payload I/O failures
 - Unit testing valid frames, empty payloads, binary payloads, partial reads, truncated input, and oversized frames
+- Processing length-prefixed frames through the pluggable handler
+- Keeping framing and message-processing logic outside the TCP server lifecycle implementation
 
 The framing package does not manage connections, deadlines, or connection lifecycle.
 
@@ -261,6 +268,14 @@ Every accepted connection receives:
 
 This keeps the transport layer reusable while enabling handlers to produce structured logs without knowing how logging is configured.
 
+The echo handler uses the framing package to read complete messages with
+`ReadFrame` and write responses with `WriteFrame`. It supports multiple
+frames on a single connection and echoes payload bytes without interpreting
+them as text.
+
+The transport layer continues to own connection lifecycle management,
+while the handler owns echo behavior.
+
 ---
 
 ## Structured Logging
@@ -305,22 +320,48 @@ The server listens on:
 
 Using `netcat`:
 
+### Manual Framed Echo Test
+
+Start the server:
+
 ```bash
-nc localhost 8080
+go run ./cmd/server
 ```
 
-Example session:
+Send a length-prefixed message using netcat:
+
+```bash
+printf '\x00\x00\x00\x05hello' | nc -N localhost 8080 | xxd
+```
+
+Expected output:
 
 ```text
-hello
-hello
-
-rpc
-rpc
+00000000: 0000 0005 6865 6c6c 6f
 ```
 
+The first four bytes encode the payload length as a big-endian unsigned
+integer. The remaining bytes contain the echoed payload.
 
-The current implementation simply echoes received data back to the client. The echo handler is for transport validation; it does not yet parse length-prefixed frames.
+Test binary data:
+
+```bash
+printf '\x00\x00\x00\x04\x00\xFF\x01\xFE' | nc -N localhost 8080 | xxd
+```
+
+Test multiple frames on one connection:
+
+```bash
+printf '\x00\x00\x00\x05hello\x00\x00\x00\x03rpc' | nc -N localhost 8080 | xxd
+```
+
+`nc -N` is supported by OpenBSD netcat. Depending on your installed
+netcat implementation, you may need to use `nc -q 0` instead.
+
+
+The echo handler reads and writes length-prefixed frames. Each request is
+decoded into a payload and echoed back in a response frame. Arbitrary binary
+payloads and multiple frames over a persistent TCP connection are supported.
 
 ### Framing Unit Tests
 
@@ -331,10 +372,11 @@ go test ./internal/framing
 ---
 ### Scenario-Based TCP Load Test
 
-The load-test command runs an end-to-end scenario against a server process that
-it starts automatically. Each scenario opens up to 1000 concurrent persistent
-TCP connections, validates echo responses, records per-message latency, and
-prints aggregate metrics.
+The load-test command runs an end-to-end scenario against a server process
+that it starts automatically. Each scenario opens up to 1000 concurrent
+persistent TCP connections, sends length-prefixed request frames, reads
+length-prefixed response frames, validates echoed payloads, records
+per-message latency, and prints aggregate metrics.
 
 Run the default scenario:
 
@@ -433,8 +475,9 @@ The framing documentation defines the four-byte big-endian length prefix,
 the 16 MiB maximum payload, zero-length payload behavior, oversized-frame
 rejection, and partial-read handling.
 
-The `WriteFrame` encoder and `ReadFrame` decoder have been implemented.
-End-to-end integration with the TCP transport remains future work.
+The `WriteFrame` encoder and `ReadFrame` decoder have been implemented and
+integrated with the framed echo handler. End-to-end integration tests and
+load-test scenarios validate framed request/response communication over TCP.
 ---
 ## Design Principles
 

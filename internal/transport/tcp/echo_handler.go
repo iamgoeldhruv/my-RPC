@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"my-rpc/internal/framing"
 	"net"
 )
 
@@ -23,10 +24,9 @@ func (h *EchoHandler) Handle(conn net.Conn, logger *slog.Logger) {
 
 	logger.Info("handling connection")
 
-	buffer := make([]byte, 4096)
-
 	for {
-		n, err := conn.Read(buffer)
+		payload, err := framing.ReadFrame(conn)
+
 		if err != nil {
 
 			if err == io.EOF {
@@ -49,7 +49,7 @@ func (h *EchoHandler) Handle(conn net.Conn, logger *slog.Logger) {
 			return
 		}
 
-		_, err = conn.Write(buffer[:n])
+		err = framing.WriteFrame(conn, payload)
 		if err != nil {
 
 			if isTimeoutError(err) {
