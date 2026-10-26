@@ -46,8 +46,14 @@ The project currently provides a reusable TCP transport layer with the following
 - Complete frame writes with partial-write handling
 - Propagation of writer errors during frame encoding
 - Unit tests for normal, empty, binary,oversized payloads, partial writes, and writer failures and maximum-size payloads
+- Length-prefix frame decoder using `ReadFrame(io.Reader) ([]byte, error)`
+- Complete header and payload reads using `io.ReadFull`
+- Payload length validation before memory allocation
+- Handling of truncated headers and payloads
+- Support for empty and binary payloads during frame decoding
+- Unit tests for valid frames, partial reads, truncated input, and oversized frames
 
-At this stage, the project focuses on networking infrastructure and transport validation. The framing protocol is designed in documentation but has not yet been implemented.
+At this stage, the project focuses on networking infrastructure and framing protocol implementation. Frame encoding and decoding are implemented, while integration with the TCP transport remains future work.
 
 
 ---
@@ -125,12 +131,17 @@ Current responsibilities:
 
 - Encoding payload lengths as unsigned 32-bit big-endian integers
 - Writing length-prefixed frames using `WriteFrame(io.Writer, []byte) error`
-- Enforcing the maximum payload size of 16 MiB
-- Handling partial writes and propagating writer errors
-- Validating frame encoding through unit tests
+- Reading length-prefixed frames using `ReadFrame(io.Reader) ([]byte, error)`
+- Enforcing the maximum payload size of 16 MiB during encoding and decoding
+- Handling partial writes using a full-write helper
+- Handling partial header and payload reads using `io.ReadFull`
+- Validating payload lengths before memory allocation
+- Propagating contextual errors for header and payload I/O failures
+- Unit testing valid frames, empty payloads, binary payloads, partial reads, truncated input, and oversized frames
 
-The frame decoder has not yet been implemented. The framing package does not
-manage connections, deadlines, or connection lifecycle.
+The framing package does not manage connections, deadlines, or connection lifecycle.
+
+
 ### `internal/logger`
 
 Provides the application's structured logging configuration.
@@ -422,8 +433,8 @@ The framing documentation defines the four-byte big-endian length prefix,
 the 16 MiB maximum payload, zero-length payload behavior, oversized-frame
 rejection, and partial-read handling.
 
-The `WriteFrame` encoder has been implemented. Frame decoding and
-end-to-end integration with the TCP transport remain future work.
+The `WriteFrame` encoder and `ReadFrame` decoder have been implemented.
+End-to-end integration with the TCP transport remains future work.
 ---
 ## Design Principles
 
