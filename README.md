@@ -45,13 +45,13 @@ The project currently provides a reusable TCP transport layer with the following
 - Payload size validation before writing
 - Complete frame writes with partial-write handling
 - Propagation of writer errors during frame encoding
-- Unit tests for normal, empty, binary,oversized payloads, partial writes, and writer failures and maximum-size payloads
+- Unit tests for normal, empty, binary, oversized payloads, partial writes, writer failures, and maximum-size payloads
 - Length-prefix frame decoder using `ReadFrame(io.Reader) ([]byte, error)`
 - Complete header and payload reads using `io.ReadFull`
 - Payload length validation before memory allocation
 - Handling of truncated headers and payloads
 - Support for empty and binary payloads during frame decoding
-- Unit tests for valid frames, partial reads, truncated input, and oversized frames
+- Unit tests for valid frames, partial reads across multiple Read calls, truncated length headers and payloads, oversized declared lengths, and     malformed-input error handling
 - Framed echo handler using `ReadFrame` and `WriteFrame`
 - Length-prefixed request and response messages over persistent TCP connections
 - Support for arbitrary binary payloads in the echo handler
@@ -142,7 +142,7 @@ Current responsibilities:
 - Handling partial header and payload reads using `io.ReadFull`
 - Validating payload lengths before memory allocation
 - Propagating contextual errors for header and payload I/O failures
-- Unit testing valid frames, empty payloads, binary payloads, partial reads, truncated input, and oversized frames
+- Unit testing valid frames, empty and binary payloads, partial reads, truncated headers and payloads, oversized declared lengths, and malformed-input handling
 - Processing length-prefixed frames through the pluggable handler
 - Keeping framing and message-processing logic outside the TCP server lifecycle implementation
 
