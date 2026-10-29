@@ -280,3 +280,114 @@ func TestReadFrameHandlesPartialReads(t *testing.T) {
         t.Fatalf("ReadFrame() = %q, want %q", got, payload)
     }
 }
+func TestReadFrameTruncatedHeader(t *testing.T) {
+    tests := []struct {
+        name string
+        data []byte
+    }{
+        {
+            name: "one byte",
+            data: []byte{0x00},
+        },
+        {
+            name: "two bytes",
+            data: []byte{0x00, 0x00},
+        },
+        {
+            name: "three bytes",
+            data: []byte{0x00, 0x00, 0x00},
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            _, err := ReadFrame(bytes.NewReader(tt.data))
+
+            if !errors.Is(err, io.ErrUnexpectedEOF) {
+                t.Fatalf(
+                    "ReadFrame() error = %v, want io.ErrUnexpectedEOF",
+                    err,
+                )
+            }
+        })
+    }
+}
+func TestReadFrameMissingPayload(t *testing.T) {
+    data := []byte{0x00, 0x00, 0x00, 0x05}
+
+    _, err := ReadFrame(bytes.NewReader(data))
+
+    if !errors.Is(err, io.EOF) {
+        t.Fatalf(
+            "ReadFrame() error = %v, want io.EOF",
+            err,
+        )
+    }
+}
+func TestReadFrameRejectsOversizedLengths(t *testing.T) {
+    tests := []struct {
+        name   string
+        length uint32
+    }{
+        {
+            name:   "one byte above maximum",
+            length: uint32(MaxPayloadSize) + 1,
+        },
+        {
+            name:   "maximum uint32 length",
+            length: ^uint32(0),
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            var header [4]byte
+            binary.BigEndian.PutUint32(header[:], tt.length)
+
+            _, err := ReadFrame(bytes.NewReader(header[:]))
+
+            if err == nil {
+                t.Fatal("ReadFrame() expected oversized payload error")
+            }
+        })
+    }
+}
+func TestReadFrameMalformedInputNeverPanics(t *testing.T) {
+    tests := []struct {
+        name string
+        data []byte
+    }{
+        {
+            name: "empty input",
+            data: nil,
+        },
+        {
+            name: "truncated header",
+            data: []byte{0x00, 0x00, 0x00},
+        },
+        {
+            name: "missing payload",
+            data: []byte{0x00, 0x00, 0x00, 0x05},
+        },
+        {
+            name: "oversized length",
+            data: []byte{0xFF, 0xFF, 0xFF, 0xFF},
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            defer func() {
+                if r := recover(); r != nil {
+                    t.Fatalf("ReadFrame() panicked: %v", r)
+                }
+            }()
+
+            _, err := ReadFrame(bytes.NewReader(tt.data))
+
+            if err == nil {
+                t.Fatal("ReadFrame() expected an error")
+            }
+        })
+    }
+}
