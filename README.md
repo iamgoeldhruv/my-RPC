@@ -60,6 +60,8 @@ The project currently provides a reusable TCP transport layer with the following
 - Go fuzz testing for `ReadFrame` using arbitrary byte sequences
 - Fuzz validation of malformed headers, oversized lengths,
   truncated payloads, and successful payload decoding
+- Benchmarks for `WriteFrame` and `ReadFrame` using Go's testing package
+- Benchmark allocation reporting with `-benchmem`
 
 At this stage, the project includes a reusable TCP transport layer and a length-prefixed framing protocol integrated with the echo handler. The server supports multiple framed messages over persistent connections, including arbitrary binary payloads. RPC serialization, service registration, and request dispatching remain future work.
 
@@ -85,7 +87,8 @@ At this stage, the project includes a reusable TCP transport layer and a length-
 ├── internal
 │   ├── framing
 │   │   ├── frame.go
-│   │   └── frame_test.go
+│   │   ├── frame_test.go
+│   │   └── frame_bench_test.go
 │   ├── logger
 │   │   └── logger.go
 │   └── transport
@@ -150,6 +153,8 @@ Current responsibilities:
 - Keeping framing and message-processing logic outside the TCP server lifecycle implementation
 - Fuzz testing `ReadFrame` against arbitrary and malformed byte sequences
   to validate decoder robustness and payload correctness
+- Benchmarking frame encoding and decoding across different payload sizes
+- Measuring execution time and memory allocations with Go benchmarks
 
 The framing package does not manage connections, deadlines, or connection lifecycle.
 
@@ -494,6 +499,20 @@ go test -fuzz=FuzzReadFrame -fuzztime=5m ./internal/framing
 
 Go automatically mutates seed inputs to explore additional input combinations.
 Failing inputs are saved in the fuzz corpus for reproducibility and regression testing.
+
+### Framing Benchmarks
+
+The framing package includes benchmarks for `WriteFrame` and `ReadFrame` across
+empty, small (64 B), medium (1 KB), and large (64 KB) payloads.
+
+The benchmarks report execution time, throughput, bytes allocated per operation,
+and allocations per operation. The read benchmark prepares the encoded frame
+outside the timed section so it measures decoding rather than frame setup.
+
+Run all framing benchmarks with allocation statistics:
+
+```bash
+go test -run=^$ -bench=. -benchmem ./internal/framing
 
 ## Documentation
 
