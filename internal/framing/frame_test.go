@@ -391,3 +391,107 @@ func TestReadFrameMalformedInputNeverPanics(t *testing.T) {
         })
     }
 }
+
+
+func FuzzReadFrame(f *testing.F) {
+	// Seed 1: Valid frame containing a normal payload.
+	f.Add([]byte{
+		0x00, 0x00, 0x00, 0x05,
+		'h', 'e', 'l', 'l', 'o',
+	})
+
+	// Seed 2: Valid empty frame.
+	f.Add([]byte{
+		0x00, 0x00, 0x00, 0x00,
+	})
+
+	// Seed 3: Valid frame containing binary data.
+	f.Add([]byte{
+		0x00, 0x00, 0x00, 0x04,
+		0x00, 0xFF, 0x10, 0x80,
+	})
+
+	// Seed 4: Truncated length header.
+	f.Add([]byte{
+		0x00, 0x00,
+	})
+
+	// Seed 5: Oversized payload length.
+	f.Add([]byte{
+		0x01, 0x00, 0x00, 0x01,
+	})
+
+	// Seed 6: Complete header but truncated payload.
+	f.Add([]byte{
+		0x00, 0x00, 0x00, 0x05,
+		'h', 'i',
+	})
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		got, err := ReadFrame(bytes.NewReader(data))
+
+		// Inputs shorter than the 4-byte header must fail.
+		if len(data) < 4 {
+			if err == nil {
+				t.Fatalf(
+					"ReadFrame() succeeded with incomplete header: %v",
+					data,
+				)
+			}
+			return
+		}
+
+		// Decode the declared payload length.
+		declaredLength := binary.BigEndian.Uint32(data[:4])
+
+		// Oversized frames must be rejected.
+		if declaredLength > MaxPayloadSize {
+			if err == nil {
+				t.Fatalf(
+					"ReadFrame() accepted oversized payload: %d bytes",
+					declaredLength,
+				)
+			}
+			return
+		}
+
+		// Check whether the complete payload is available.
+		availablePayloadLength := len(data) - 4
+
+		if uint64(availablePayloadLength) < uint64(declaredLength) {
+			if err == nil {
+				t.Fatalf(
+					"ReadFrame() succeeded with truncated payload: declared=%d, available=%d",
+					declaredLength,
+					availablePayloadLength,
+				)
+			}
+			return
+		}
+
+		// A complete, valid frame must decode successfully.
+		if err != nil {
+			t.Fatalf("ReadFrame() returned unexpected error: %v", err)
+		}
+
+		// Verify that the decoded payload has the expected length.
+		if len(got) != int(declaredLength) {
+			t.Fatalf(
+				"ReadFrame() returned incorrect payload length: got=%d, want=%d",
+				len(got),
+				declaredLength,
+			)
+		}
+
+		// Verify that the decoded payload matches the original bytes.
+		want := data[4 : 4+int(declaredLength)]
+
+		if !bytes.Equal(got, want) {
+			t.Fatalf(
+				"ReadFrame() returned incorrect payload: got=%v, want=%v",
+				got,
+				want,
+			)
+		}
+	})
+}

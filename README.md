@@ -57,6 +57,9 @@ The project currently provides a reusable TCP transport layer with the following
 - Support for arbitrary binary payloads in the echo handler
 - Load-test client using framed requests and responses
 - Integration tests for binary payloads and multiple frames per connection
+- Go fuzz testing for `ReadFrame` using arbitrary byte sequences
+- Fuzz validation of malformed headers, oversized lengths,
+  truncated payloads, and successful payload decoding
 
 At this stage, the project includes a reusable TCP transport layer and a length-prefixed framing protocol integrated with the echo handler. The server supports multiple framed messages over persistent connections, including arbitrary binary payloads. RPC serialization, service registration, and request dispatching remain future work.
 
@@ -145,6 +148,8 @@ Current responsibilities:
 - Unit testing valid frames, empty and binary payloads, partial reads, truncated headers and payloads, oversized declared lengths, and malformed-input handling
 - Processing length-prefixed frames through the pluggable handler
 - Keeping framing and message-processing logic outside the TCP server lifecycle implementation
+- Fuzz testing `ReadFrame` against arbitrary and malformed byte sequences
+  to validate decoder robustness and payload correctness
 
 The framing package does not manage connections, deadlines, or connection lifecycle.
 
@@ -466,6 +471,29 @@ performance check.
 
 
 ---
+
+### Framing Fuzz Tests
+
+The framing package includes Go fuzz tests for `ReadFrame` to validate
+decoder robustness against arbitrary byte sequences and malformed input.
+
+The fuzz test checks:
+
+- Incomplete length headers
+- Oversized declared payload lengths
+- Truncated payloads
+- Correct decoding of valid frames
+- Preservation of arbitrary binary payloads
+- Error handling for malformed input
+
+Run the fuzz test:
+
+```bash
+go test -fuzz=FuzzReadFrame -fuzztime=5m ./internal/framing
+```
+
+Go automatically mutates seed inputs to explore additional input combinations.
+Failing inputs are saved in the fuzz corpus for reproducibility and regression testing.
 
 ## Documentation
 
