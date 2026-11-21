@@ -63,7 +63,13 @@ The project currently provides a reusable TCP transport layer with the following
 - Benchmarks for `WriteFrame` and `ReadFrame` using Go's testing package
 - Benchmark allocation reporting with `-benchmem`
 
-At this stage, the project includes a reusable TCP transport layer and a length-prefixed framing protocol integrated with the echo handler. The server supports multiple framed messages over persistent connections, including arbitrary binary payloads. RPC serialization, service registration, and request dispatching remain future work.
+At this stage, the project includes a reusable TCP transport layer, a length-prefixed framing protocol, and an independent JSON-based RPC message protocol.
+
+The JSON protocol defines request and response structures, request identifiers, method names, parameters, success results, and structured errors. It includes JSON encoding, decoding, message validation, and unit tests for valid messages and malformed inputs.
+
+The framing layer remains responsible for message boundaries, while the protocol layer defines the structure and semantics of RPC messages.
+
+The JSON protocol has not yet been integrated into the TCP handler. Service registration, request dispatching, and client/server RPC abstractions remain future work.
 
 
 ---
@@ -89,6 +95,10 @@ At this stage, the project includes a reusable TCP transport layer and a length-
 │   │   ├── frame.go
 │   │   ├── frame_test.go
 │   │   └── frame_bench_test.go
+|   ├── protocol
+|   │   ├── message.go
+|   │   ├── message_test.go
+|   │   └── errors.go
 │   ├── logger
 │   │   └── logger.go
 │   └── transport
@@ -194,7 +204,95 @@ Responsibilities include:
 - Enforcing connection-level timeout policies independently of protocol logic
 
 ---
+### `internal/protocol`
 
+Implements the JSON-based RPC message protocol independently of the transport and framing layers.
+
+Current responsibilities:
+
+- Defining RPC request structures with JSON tags.
+- Defining RPC response structures for successful and failed calls.
+- Representing request identifiers using unsigned 64-bit integers.
+- Representing fully qualified method names using the `Service.Method` format.
+- Using `json.RawMessage` for method parameters and response results to support different argument and return types.
+- Defining structured RPC errors with numeric error codes and descriptive messages.
+- Encoding RPC requests and responses into JSON.
+- Decoding incoming JSON requests into typed request structures.
+- Validating request method names, parameters, and response invariants.
+- Ensuring responses contain either a result or an error, but not both.
+- Providing helpers for constructing successful and error responses.
+- Unit testing JSON serialization, deserialization, validation, and malformed messages.
+
+The protocol package does not manage TCP connections, message framing, or service method execution.
+
+It operates on JSON payloads and remains independent of the transport layer and framing implementation.
+## JSON RPC Wire Protocol
+
+The RPC protocol uses JSON to represent requests and responses. Each JSON message is transported as a length-prefixed frame using the existing framing layer.
+
+### Request Format
+
+Every RPC request contains:
+
+- `id`: Unique request identifier used to correlate responses.
+- `method`: Fully qualified method name in the `Service.Method` format.
+- `params`: JSON object containing method arguments.
+
+Example:
+
+```json
+{
+  "id": 1,
+  "method": "Calculator.Add",
+  "params": {
+    "a": 2,
+    "b": 3
+  }
+}
+```
+
+### Successful Response
+
+A successful response echoes the request identifier and contains the method result.
+
+```json
+{
+  "id": 1,
+  "result": 5
+}
+```
+
+### Error Response
+
+A failed request returns a structured error containing a numeric code and descriptive message.
+
+```json
+{
+  "id": 1,
+  "error": {
+    "code": 404,
+    "message": "method not found"
+  }
+}
+```
+
+### Initial Error Codes
+
+| Code | Meaning |
+| --- | --- |
+| 400 | Invalid request |
+| 404 | Method not found |
+| 500 | Internal server error |
+
+### Protocol Design
+
+- Request identifiers allow clients to correlate responses with their original requests.
+- `json.RawMessage` keeps method parameters and results independent of specific Go types.
+- Request and response validation enforces protocol-level invariants.
+- Successful responses contain a result, while failed responses contain a structured error.
+- JSON serialization is kept separate from message framing and TCP transport.
+
+The protocol package currently defines and validates these messages independently. Integration with the TCP handler and RPC dispatcher will be implemented in subsequent stages.
 ## Architecture
 
 ```text
@@ -495,6 +593,40 @@ Run the fuzz test:
 
 ```bash
 go test -fuzz=FuzzReadFrame -fuzztime=5m ./internal/framing
+```
+### Protocol Unit Tests
+
+The protocol package includes unit tests for JSON request and response serialization, deserialization, and validation.
+
+The tests cover:
+
+- Decoding valid RPC requests.
+- Encoding RPC requests.
+- Creating and encoding successful responses.
+- Creating and encoding structured error responses.
+- Validating request method names and parameters.
+- Rejecting missing request identifiers.
+- Rejecting invalid JSON parameters.
+- Ensuring successful responses do not omit zero-valued results.
+- Ensuring responses contain exactly one of `result` or `error`.
+- Handling `nil` results as JSON `null`.
+
+Run the protocol package tests:
+
+```bash
+go test ./internal/protocol
+```
+
+Run all project tests:
+
+```bash
+go test ./...
+```
+
+Run tests with the race detector:
+
+```bash
+go test -race ./...
 ```
 
 Go automatically mutates seed inputs to explore additional input combinations.
