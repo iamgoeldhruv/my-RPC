@@ -62,6 +62,15 @@ The project currently provides a reusable TCP transport layer with the following
   truncated payloads, and successful payload decoding
 - Benchmarks for `WriteFrame` and `ReadFrame` using Go's testing package
 - Benchmark allocation reporting with `-benchmem`
+- Reflection-based RPC service registration
+- Service name validation and duplicate registration prevention
+- Nil receiver validation, including typed-nil receivers
+- Automatic enumeration of exported service methods
+- Reflection-based method signature validation
+- Filtering of variadic and incompatible methods
+- Extraction of method argument and response types
+- Storage of registered methods in a service registry
+- Thread-safe service registration using `sync.RWMutex`
 
 At this stage, the project includes a reusable TCP transport layer, a length-prefixed framing protocol, and an independent JSON-based RPC message protocol.
 
@@ -69,7 +78,11 @@ The JSON protocol defines request and response structures, request identifiers, 
 
 The framing layer remains responsible for message boundaries, while the protocol layer defines the structure and semantics of RPC messages.
 
-The JSON protocol has not yet been integrated into the TCP handler. Service registration, request dispatching, and client/server RPC abstractions remain future work.
+The project now includes a reflection-based RPC service registration layer.
+
+The server can register service receivers, inspect their exported methods using Go reflection, validate method signatures, extract argument and response types, and store eligible methods in a service registry for later request dispatching.
+
+The JSON protocol is not yet integrated into the TCP handler, and end-to-end RPC request dispatching remains future work.
 
 
 ---
@@ -99,6 +112,10 @@ The JSON protocol has not yet been integrated into the TCP handler. Service regi
 |   │   ├── message.go
 |   │   ├── message_test.go
 |   │   └── errors.go
+│   ├── rpcserver
+│   │   ├── registry.go
+│   │   └── registry_test.go
+│   │   └── server.go
 │   ├── logger
 │   │   └── logger.go
 │   └── transport
@@ -229,6 +246,24 @@ It operates on JSON payloads and remains independent of the transport layer and 
 ## JSON RPC Wire Protocol
 
 The RPC protocol uses JSON to represent requests and responses. Each JSON message is transported as a length-prefixed frame using the existing framing layer.
+### `internal/rpcserver`
+
+Implements the RPC server-side service registration layer using Go reflection.
+
+Current responsibilities:
+
+- Registering service receivers using `Register(name string, receiver any)`.
+- Validating service names and rejecting empty names or names containing dots.
+- Validating receivers and rejecting nil and typed-nil values.
+- Enumerating exported methods available on registered service receivers.
+- Inspecting method signatures using Go reflection.
+- Rejecting variadic methods and methods with incompatible signatures.
+- Extracting method argument and response types.
+- Storing eligible methods as metadata in a service registry.
+- Preventing duplicate service registration.
+- Synchronizing registry updates using a mutex.
+
+The registration layer prepares service metadata for future RPC request dispatching. It does not yet execute incoming RPC methods.
 
 ### Request Format
 
@@ -358,6 +393,13 @@ The transport layer manages networking concerns only.
 Application behavior is delegated through the `Handler` interface, allowing different protocols to be implemented without modifying the transport layer.
 
 ---
+### RPC Service Registration
+
+The RPC server maintains a service registry containing registered service names and their eligible methods.
+
+During registration, Go reflection is used to inspect service receivers, enumerate exported methods, validate method signatures, and store method metadata.
+
+This registry will later be used by the RPC dispatcher to resolve incoming `Service.Method` requests and invoke the corresponding registered method.
 
 ## Handler Abstraction
 
